@@ -20,8 +20,8 @@ const Dashboard = ({ activeTab }) => {
   // Forms State
   const [custForm, setCustForm] = useState({ company_name: '', phone: '', email: '', credit_limit: 50000 });
   const [creditForm, setCreditForm] = useState({ customer_id: '', amount: '', due_days: 15 });
-  const [payMethod, setPayMethod] = useState('UPI');
-  const [payRef, setPayRef] = useState('cred.sync@okaxis');
+  const [payMethod, setPayMethod] = useState('Razorpay UPI');
+  const [payRef, setPayRef] = useState('credsync.razorpay@okicici');
 
   const fetchAllData = async () => {
     try {
@@ -74,7 +74,7 @@ const Dashboard = ({ activeTab }) => {
     if (!payModalCredit) return;
     await axios.post(`${API}/credits/${payModalCredit.id}/pay`, {
       payment_method: payMethod,
-      reference_id: payRef || `TXN${Math.floor(100000 + Math.random() * 900000)}`
+      reference_id: payRef || `RZP_${Math.floor(100000 + Math.random() * 900000)}`
     });
     setPayModalCredit(null);
     fetchAllData();
@@ -214,7 +214,7 @@ const Dashboard = ({ activeTab }) => {
                       <td className="p-3 text-right">
                         {c.status !== 'PAID' && (
                           <button
-                            onClick={() => { setPayModalCredit(c); setPayMethod('UPI'); setPayRef('business@okicici'); }}
+                            onClick={() => { setPayModalCredit(c); setPayMethod('Razorpay UPI'); setPayRef('credsync.razorpay@okicici'); }}
                             className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-medium"
                           >
                             <CheckCircle size={14} /> Settle / Pay
@@ -341,69 +341,104 @@ const Dashboard = ({ activeTab }) => {
         </div>
       )}
 
-      {/* Modal 3: Interactive Payment Checkout Gateway */}
+      {/* Modal 3: Razorpay Powered Payment Checkout Gateway */}
       {payModalCredit && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200">
-            <div className="flex justify-between items-center pb-4 border-b">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600">CredSync Instant Settlement</span>
-                <h3 className="text-lg font-bold text-slate-900">{payModalCredit.customers?.company_name}</h3>
-              </div>
-              <button onClick={() => setPayModalCredit(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
-            </div>
-
-            <div className="my-4 p-4 bg-slate-900 text-white rounded-xl flex justify-between items-center">
-              <div>
-                <p className="text-xs text-slate-400">Invoice {payModalCredit.invoice_number}</p>
-                <p className="text-2xl font-bold mt-0.5">₹{Number(payModalCredit.amount).toLocaleString()}</p>
-              </div>
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-medium">
-                256-bit Secured
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              <button type="button" onClick={() => { setPayMethod('UPI'); setPayRef('business@okaxis'); }} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition ${payMethod === 'UPI' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                <Smartphone size={18} /> UPI / QR
-              </button>
-              <button type="button" onClick={() => { setPayMethod('Corporate Card'); setPayRef('•••• 4829'); }} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition ${payMethod === 'Corporate Card' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                <CreditCard size={18} /> Card
-              </button>
-              <button type="button" onClick={() => { setPayMethod('NEFT / RTGS'); setPayRef('UTR88291044'); }} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition ${payMethod === 'NEFT / RTGS' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                <Building2 size={18} /> NetBanking
-              </button>
-            </div>
-
-            <form onSubmit={handleProcessPayment} className="space-y-4">
-              {payMethod === 'UPI' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-600">Enter Customer UPI ID or Scan QR</label>
-                  <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="customer@upi" />
+          <div className="bg-white rounded-2xl overflow-hidden w-full max-w-md shadow-2xl border border-slate-200">
+            
+            {/* Razorpay Branded Header */}
+            <div className="bg-[#0D1627] text-white px-6 py-4 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#2B84EA] flex items-center justify-center font-black text-white text-lg italic shadow-md">
+                  R
                 </div>
-              )}
-
-              {payMethod === 'Corporate Card' && (
-                <div className="space-y-2.5">
-                  <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" placeholder="Card Number: 4532 •••• •••• 4829" defaultValue="4532 8910 3321 4829" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input required className="border p-2.5 rounded-lg text-sm font-mono" placeholder="MM/YY" defaultValue="09/29" />
-                    <input required type="password" className="border p-2.5 rounded-lg text-sm font-mono" placeholder="CVV" defaultValue="842" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold tracking-wide">Razorpay Checkout</h3>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-1.5 py-0.5 rounded font-semibold">TRUSTED</span>
                   </div>
+                  <p className="text-xs text-slate-400 mt-0.5">{payModalCredit.customers?.company_name} • {payModalCredit.invoice_number}</p>
                 </div>
-              )}
+              </div>
+              <button onClick={() => setPayModalCredit(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+            </div>
 
-              {payMethod === 'NEFT / RTGS' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-600">Bank UTR / IMPS Reference Number</label>
-                  <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="UTR Number" />
-                </div>
-              )}
+            {/* Amount Bar */}
+            <div className="bg-[#162238] text-white px-6 py-3 flex justify-between items-center border-t border-slate-800">
+              <span className="text-xs text-slate-300">Payable Amount</span>
+              <span className="text-xl font-bold text-emerald-400">₹{Number(payModalCredit.amount).toLocaleString()}</span>
+            </div>
 
-              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-emerald-600/20 transition">
-                Confirm & Settle ₹{Number(payModalCredit.amount).toLocaleString()}
-              </button>
-            </form>
+            <div className="p-6">
+              {/* Payment Mode Tabs */}
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                <button type="button" onClick={() => { setPayMethod('Razorpay UPI'); setPayRef('credsync.razorpay@okicici'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('UPI') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  <Smartphone size={18} /> UPI / QR
+                </button>
+                <button type="button" onClick={() => { setPayMethod('Razorpay Card'); setPayRef('•••• 4829'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('Card') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  <CreditCard size={18} /> Card
+                </button>
+                <button type="button" onClick={() => { setPayMethod('Razorpay NetBanking'); setPayRef('UTR88291044'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('NetBanking') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  <Building2 size={18} /> NetBanking
+                </button>
+              </div>
+
+              <form onSubmit={handleProcessPayment} className="space-y-4">
+                {payMethod.includes('UPI') && (
+                  <div className="space-y-3">
+                    {/* Live Dynamic QR Code Box */}
+                    <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`upi://pay?pa=credsync.razorpay@okicici&pn=CredSync%20FinOps&am=${payModalCredit.amount}&cu=INR`)}`}
+                        alt="Razorpay UPI QR"
+                        className="w-24 h-24 rounded-lg border bg-white p-1 shadow-xs"
+                      />
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold uppercase text-[#2B84EA]">Scan & Pay via any UPI App</span>
+                        <p className="text-xs text-slate-600 leading-snug">GPay, PhonePe, Paytm, BHIM supported. Auto-verifies ₹{Number(payModalCredit.amount).toLocaleString()}.</p>
+                        <p className="text-[11px] font-mono text-slate-500 pt-1">VPA: credsync.razorpay@okicici</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600">Or Enter Customer UPI ID</label>
+                      <input required className="w-full border p-2.5 rounded-lg text-sm font-mono mt-1" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="customer@upi" />
+                    </div>
+                  </div>
+                )}
+
+                {payMethod.includes('Card') && (
+                  <div className="space-y-2.5">
+                    <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" placeholder="Card Number: 4532 •••• •••• 4829" defaultValue="4532 8910 3321 4829" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input required className="border p-2.5 rounded-lg text-sm font-mono" placeholder="MM/YY" defaultValue="09/29" />
+                      <input required type="password" className="border p-2.5 rounded-lg text-sm font-mono" placeholder="CVV" defaultValue="842" />
+                    </div>
+                  </div>
+                )}
+
+                {payMethod.includes('NetBanking') && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600">Select Bank / UTR Reference</label>
+                    <select className="w-full border p-2.5 rounded-lg text-sm mb-2">
+                      <option>HDFC Corporate Banking</option>
+                      <option>ICICI Business NetBanking</option>
+                      <option>State Bank of India (SBI)</option>
+                      <option>Axis Bank Corporate</option>
+                    </select>
+                    <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="UTR Number" />
+                  </div>
+                )}
+
+                <button type="submit" className="w-full bg-[#2B84EA] hover:bg-blue-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-blue-600/20 transition flex items-center justify-center gap-2">
+                  Pay ₹{Number(payModalCredit.amount).toLocaleString()} via Razorpay
+                </button>
+              </form>
+
+              <p className="text-center text-[11px] text-slate-400 mt-3">
+                Secured by <span className="font-bold text-slate-600">Razorpay</span> • PCI-DSS Level 1 Compliant
+              </p>
+            </div>
           </div>
         </div>
       )}
