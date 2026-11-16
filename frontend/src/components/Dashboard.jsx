@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ShieldAlert, TrendingUp, MessageSquare, Lightbulb, AlertTriangle, Plus, CheckCircle, X, CreditCard, Smartphone, Building2 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -26,14 +25,15 @@ const Dashboard = ({ activeTab }) => {
 
   const fetchAllData = async () => {
     try {
-      // 1. Fast database data turant load karo (KPIs, Customers, Credits, Payments)
-      const [mRes, cRes, crRes, pRes] = await Promise.all([
+      const [mRes, aiRes, cRes, crRes, pRes] = await Promise.all([
         axios.get(`${API}/dashboard/metrics`),
+        axios.get(`${API}/ai/`),
         axios.get(`${API}/customers/`),
         axios.get(`${API}/credits/`),
         axios.get(`${API}/credits/payments`)
       ]);
       setMetrics(mRes.data);
+      setInsights(aiRes.data);
       setCustomers(cRes.data);
       setCredits(crRes.data);
       setPayments(pRes.data);
@@ -42,14 +42,6 @@ const Dashboard = ({ activeTab }) => {
       }
     } catch (err) {
       console.error(err);
-    }
-
-    // 2. Gemini AI Insights ko background mein load karo taaki UI block na ho
-    try {
-      const aiRes = await axios.get(`${API}/ai/`);
-      setInsights(aiRes.data);
-    } catch (err) {
-      console.error("AI Insights delayed:", err);
     }
   };
 
@@ -171,21 +163,17 @@ const Dashboard = ({ activeTab }) => {
             <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Lightbulb className="text-amber-500" size={20} /> Gemini AI Financial & Risk Insights
             </h2>
-            {insights.length === 0 ? (
-              <p className="text-xs text-slate-400 animate-pulse">Generating live Gemini AI risk insights...</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {insights.map((item) => (
-                  <div key={item.id} className="flex items-start gap-3.5 p-4 bg-slate-50 rounded-lg border border-slate-200/60">
-                    <div className="mt-0.5 bg-white p-2 rounded-lg shadow-sm">{iconMap[item.icon] || iconMap.Lightbulb}</div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-sm">{item.title}</h3>
-                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.description}</p>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {insights.map((item) => (
+                <div key={item.id} className="flex items-start gap-3.5 p-4 bg-slate-50 rounded-lg border border-slate-200/60">
+                  <div className="mt-0.5 bg-white p-2 rounded-lg shadow-sm">{iconMap[item.icon] || iconMap.Lightbulb}</div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">{item.title}</h3>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.description}</p>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -398,15 +386,13 @@ const Dashboard = ({ activeTab }) => {
               <form onSubmit={handleProcessPayment} className="space-y-4">
                 {payMethod.includes('UPI') && (
                   <div className="space-y-3">
-                    {/* Live Dynamic Offline QR Code Box */}
+                    {/* Live Dynamic QR Code Box */}
                     <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="p-1.5 bg-white rounded-lg border shadow-xs shrink-0">
-                        <QRCodeSVG
-                          value={`upi://pay?pa=credsync.razorpay@okicici&pn=CredSync%20FinOps&am=${payModalCredit.amount}&cu=INR`}
-                          size={88}
-                          level="M"
-                        />
-                      </div>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`upi://pay?pa=credsync.razorpay@okicici&pn=CredSync%20FinOps&am=${payModalCredit.amount}&cu=INR`)}`}
+                        alt="Razorpay UPI QR"
+                        className="w-24 h-24 rounded-lg border bg-white p-1 shadow-xs"
+                      />
                       <div className="space-y-1">
                         <span className="text-[11px] font-bold uppercase text-[#2B84EA]">Scan & Pay via any UPI App</span>
                         <p className="text-xs text-slate-600 leading-snug">GPay, PhonePe, Paytm, BHIM supported. Auto-verifies ₹{Number(payModalCredit.amount).toLocaleString()}.</p>
