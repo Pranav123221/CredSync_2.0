@@ -23,7 +23,7 @@ const writeCache = (key, value) => {
   }
 };
 
-const Dashboard = ({ activeTab }) => {
+const Dashboard = ({ activeTab, viewMode = 'merchant' }) => {
   const [metrics, setMetrics] = useState(() => readCache('credsync_metrics', null));
   const [insights, setInsights] = useState(() => readCache('credsync_insights', []));
   const [customers, setCustomers] = useState(() => readCache('credsync_customers', []));
@@ -138,29 +138,41 @@ const Dashboard = ({ activeTab }) => {
       {/* Top Action Header */}
       <header className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-200">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Accounts Receivable & Credit Operations</h1>
-          <p className="text-sm text-slate-500">Real-time ledger synchronization, aging analytics & Gemini risk scoring</p>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {viewMode === 'customer'
+              ? 'Customer Payment & Invoice Settlement Portal'
+              : 'Accounts Receivable & Credit Operations'}
+          </h1>
+          <p className="text-sm text-slate-500">
+            {viewMode === 'customer'
+              ? 'Select any pending invoice to pay via UPI QR, Card, or NetBanking'
+              : 'Real-time ledger synchronization, aging analytics & Gemini risk scoring'}
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowCustModal(true)} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition">
-            <Plus size={16} /> Add Customer
-          </button>
-          <button onClick={() => setShowCreditModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition shadow-sm">
-            <Plus size={16} /> Issue Credit / Invoice
-          </button>
-        </div>
+        {viewMode === 'merchant' && (
+          <div className="flex gap-3">
+            <button onClick={() => setShowCustModal(true)} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition">
+              <Plus size={16} /> Add Customer
+            </button>
+            <button onClick={() => setShowCreditModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition shadow-sm">
+              <Plus size={16} /> Issue Credit / Invoice
+            </button>
+          </div>
+        )}
       </header>
 
-      {/* Enterprise KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <MetricCard title="Total Outstanding AR" amount={metrics.metrics.total_outstanding} sub="Active receivables" />
-        <MetricCard title="Total Overdue Exposure" amount={metrics.metrics.total_overdue} color="text-red-600" sub="Past due date" />
-        <MetricCard title="Collection Efficiency" amount={metrics.metrics.collection_efficiency} color="text-emerald-600" sub="Recovered vs Billed" />
-        <MetricCard title="Avg. DSO (Turnaround)" amount={metrics.metrics.avg_dso} color="text-blue-600" sub="Days Sales Outstanding" />
-      </div>
+      {/* Enterprise KPI Cards (Merchant Only) */}
+      {viewMode === 'merchant' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+          <MetricCard title="Total Outstanding AR" amount={metrics.metrics.total_outstanding} sub="Active receivables" />
+          <MetricCard title="Total Overdue Exposure" amount={metrics.metrics.total_overdue} color="text-red-600" sub="Past due date" />
+          <MetricCard title="Collection Efficiency" amount={metrics.metrics.collection_efficiency} color="text-emerald-600" sub="Recovered vs Billed" />
+          <MetricCard title="Avg. DSO (Turnaround)" amount={metrics.metrics.avg_dso} color="text-blue-600" sub="Days Sales Outstanding" />
+        </div>
+      )}
 
-      {/* Main Dashboard View */}
-      {(activeTab === 'dashboard' || activeTab === 'ai') && (
+      {/* Main Dashboard View (Merchant Analytics & Gemini AI Insights) */}
+      {viewMode === 'merchant' && (activeTab === 'dashboard' || activeTab === 'ai') && (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
@@ -222,7 +234,7 @@ const Dashboard = ({ activeTab }) => {
       )}
 
       {/* Invoices & Credits Ledger Table */}
-      {(activeTab === 'dashboard' || activeTab === 'credits') && (
+      {(viewMode === 'customer' || activeTab === 'dashboard' || activeTab === 'credits') && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
           <h2 className="text-base font-bold text-slate-800 mb-4">Active Credit Ledger & Collections</h2>
           {credits.length === 0 ? (
@@ -274,7 +286,7 @@ const Dashboard = ({ activeTab }) => {
       )}
 
       {/* Payments Ledger View */}
-      {(activeTab === 'dashboard' || activeTab === 'payments') && (
+      {(viewMode === 'customer' || activeTab === 'dashboard' || activeTab === 'payments') && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
           <h2 className="text-base font-bold text-slate-800 mb-4">Verified Payments & Settlements ({payments.length})</h2>
           {payments.length === 0 ? (
@@ -312,8 +324,8 @@ const Dashboard = ({ activeTab }) => {
         </div>
       )}
 
-      {/* Customers Directory View */}
-      {activeTab === 'customers' && (
+      {/* Customers Directory View (Merchant Only) */}
+      {viewMode === 'merchant' && activeTab === 'customers' && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
           <h2 className="text-base font-bold text-slate-800 mb-4">Registered Business Accounts ({customers.length})</h2>
           <table className="w-full text-left text-sm">
