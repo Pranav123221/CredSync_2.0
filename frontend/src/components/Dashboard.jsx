@@ -6,11 +6,21 @@ import { ShieldAlert, TrendingUp, MessageSquare, Lightbulb, AlertTriangle, Plus,
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const Dashboard = ({ activeTab }) => {
-  const [metrics, setMetrics] = useState(null);
-  const [insights, setInsights] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [credits, setCredits] = useState([]);
-  const [payments, setPayments] = useState([]);
+  const [metrics, setMetrics] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('credsync_metrics')); } catch { return null; }
+  });
+  const [insights, setInsights] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('credsync_insights')) || []; } catch { return []; }
+  });
+  const [customers, setCustomers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('credsync_customers')) || []; } catch { return []; }
+  });
+  const [credits, setCredits] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('credsync_credits')) || []; } catch { return []; }
+  });
+  const [payments, setPayments] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('credsync_payments')) || []; } catch { return []; }
+  });
   
   // Modals State
   const [showCustModal, setShowCustModal] = useState(false);
@@ -25,21 +35,40 @@ const Dashboard = ({ activeTab }) => {
 
   const fetchAllData = async () => {
     try {
-      const [mRes, aiRes, cRes, crRes, pRes] = await Promise.all([
+      // Phase 1: Fast Supabase ledger & KPIs (UI turant update hota hai)
+      const [mRes, cRes, crRes, pRes] = await Promise.all([
         axios.get(`${API}/dashboard/metrics`),
-        axios.get(`${API}/ai/`),
         axios.get(`${API}/customers/`),
         axios.get(`${API}/credits/`),
         axios.get(`${API}/credits/payments`)
       ]);
+
       setMetrics(mRes.data);
-      setInsights(aiRes.data);
       setCustomers(cRes.data);
       setCredits(crRes.data);
       setPayments(pRes.data);
+
+      try {
+        localStorage.setItem('credsync_metrics', JSON.stringify(mRes.data));
+        localStorage.setItem('credsync_customers', JSON.stringify(cRes.data));
+        localStorage.setItem('credsync_credits', JSON.stringify(crRes.data));
+        localStorage.setItem('credsync_payments', JSON.stringify(pRes.data));
+      } catch {}
+
       if (cRes.data.length > 0 && !creditForm.customer_id) {
         setCreditForm(prev => ({ ...prev, customer_id: cRes.data[0].id }));
       }
+    } catch (err) {
+      console.error(err);
+    }
+
+    // Phase 2: Gemini AI insights background mein load honge (UI ko nahi rokenge)
+    try {
+      const aiRes = await axios.get(`${API}/ai/`);
+      setInsights(aiRes.data);
+      try {
+        localStorage.setItem('credsync_insights', JSON.stringify(aiRes.data));
+      } catch {}
     } catch (err) {
       console.error(err);
     }
