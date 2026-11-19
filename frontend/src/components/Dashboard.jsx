@@ -1,32 +1,40 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { QRCodeSVG } from 'qrcode.react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ShieldAlert, TrendingUp, MessageSquare, Lightbulb, AlertTriangle, Plus, CheckCircle, X, CreditCard, Smartphone, Building2 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+const readCache = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeCache = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota errors
+  }
+};
+
 const Dashboard = ({ activeTab }) => {
-  const [metrics, setMetrics] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('credsync_metrics')); } catch { return null; }
-  });
-  const [insights, setInsights] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('credsync_insights')) || []; } catch { return []; }
-  });
-  const [customers, setCustomers] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('credsync_customers')) || []; } catch { return []; }
-  });
-  const [credits, setCredits] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('credsync_credits')) || []; } catch { return []; }
-  });
-  const [payments, setPayments] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('credsync_payments')) || []; } catch { return []; }
-  });
-  
+  const [metrics, setMetrics] = useState(() => readCache('credsync_metrics', null));
+  const [insights, setInsights] = useState(() => readCache('credsync_insights', []));
+  const [customers, setCustomers] = useState(() => readCache('credsync_customers', []));
+  const [credits, setCredits] = useState(() => readCache('credsync_credits', []));
+  const [payments, setPayments] = useState(() => readCache('credsync_payments', []));
+
   // Modals State
   const [showCustModal, setShowCustModal] = useState(false);
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [payModalCredit, setPayModalCredit] = useState(null);
-  
+
   // Forms State
   const [custForm, setCustForm] = useState({ company_name: '', phone: '', email: '', credit_limit: 50000 });
   const [creditForm, setCreditForm] = useState({ customer_id: '', amount: '', due_days: 15 });
@@ -35,7 +43,7 @@ const Dashboard = ({ activeTab }) => {
 
   const fetchAllData = async () => {
     try {
-      // Phase 1: Fast Supabase ledger & KPIs (UI turant update hota hai)
+      // Phase 1: Fast Supabase ledger & KPIs (non-blocking UI)
       const [mRes, cRes, crRes, pRes] = await Promise.all([
         axios.get(`${API}/dashboard/metrics`),
         axios.get(`${API}/customers/`),
@@ -48,12 +56,10 @@ const Dashboard = ({ activeTab }) => {
       setCredits(crRes.data);
       setPayments(pRes.data);
 
-      try {
-        localStorage.setItem('credsync_metrics', JSON.stringify(mRes.data));
-        localStorage.setItem('credsync_customers', JSON.stringify(cRes.data));
-        localStorage.setItem('credsync_credits', JSON.stringify(crRes.data));
-        localStorage.setItem('credsync_payments', JSON.stringify(pRes.data));
-      } catch {}
+      writeCache('credsync_metrics', mRes.data);
+      writeCache('credsync_customers', cRes.data);
+      writeCache('credsync_credits', crRes.data);
+      writeCache('credsync_payments', pRes.data);
 
       if (cRes.data.length > 0 && !creditForm.customer_id) {
         setCreditForm(prev => ({ ...prev, customer_id: cRes.data[0].id }));
@@ -62,13 +68,11 @@ const Dashboard = ({ activeTab }) => {
       console.error(err);
     }
 
-    // Phase 2: Gemini AI insights background mein load honge (UI ko nahi rokenge)
+    // Phase 2: Gemini AI insights in background so dashboard never waits on LLM
     try {
       const aiRes = await axios.get(`${API}/ai/`);
       setInsights(aiRes.data);
-      try {
-        localStorage.setItem('credsync_insights', JSON.stringify(aiRes.data));
-      } catch {}
+      writeCache('credsync_insights', aiRes.data);
     } catch (err) {
       console.error(err);
     }
@@ -109,7 +113,13 @@ const Dashboard = ({ activeTab }) => {
     fetchAllData();
   };
 
-  if (!metrics) return <div className="flex items-center justify-center h-full text-lg font-semibold text-slate-600">Initializing CredSync FinOps Engine...</div>;
+  if (!metrics) {
+    return (
+      <div className="flex items-center justify-center h-full text-lg font-semibold text-slate-600">
+        Initializing CredSync FinOps Engine...
+      </div>
+    );
+  }
 
   const iconMap = {
     AlertTriangle: <AlertTriangle className="text-orange-500" size={22} />,
@@ -118,6 +128,10 @@ const Dashboard = ({ activeTab }) => {
     MessageSquare: <MessageSquare className="text-blue-500" size={22} />,
     Lightbulb: <Lightbulb className="text-amber-500" size={22} />
   };
+
+  const mobileQrUrl = payModalCredit
+    ? `${window.location.origin}/?pay=1&id=${encodeURIComponent(payModalCredit.id)}&inv=${encodeURIComponent(payModalCredit.invoice_number)}&amt=${encodeURIComponent(payModalCredit.amount)}&cust=${encodeURIComponent(payModalCredit.customers?.company_name || 'Enterprise Client')}`
+    : '';
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -415,16 +429,14 @@ const Dashboard = ({ activeTab }) => {
               <form onSubmit={handleProcessPayment} className="space-y-4">
                 {payMethod.includes('UPI') && (
                   <div className="space-y-3">
-                    {/* Live Dynamic QR Code Box */}
+                    {/* Offline SVG QR Code for Mobile Checkout Scan */}
                     <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`upi://pay?pa=credsync.razorpay@okicici&pn=CredSync%20FinOps&am=${payModalCredit.amount}&cu=INR`)}`}
-                        alt="Razorpay UPI QR"
-                        className="w-24 h-24 rounded-lg border bg-white p-1 shadow-xs"
-                      />
+                      <div className="p-1.5 bg-white rounded-lg border shadow-xs shrink-0">
+                        <QRCodeSVG value={mobileQrUrl} size={88} level="M" />
+                      </div>
                       <div className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase text-[#2B84EA]">Scan & Pay via any UPI App</span>
-                        <p className="text-xs text-slate-600 leading-snug">GPay, PhonePe, Paytm, BHIM supported. Auto-verifies ₹{Number(payModalCredit.amount).toLocaleString()}.</p>
+                        <span className="text-[11px] font-bold uppercase text-[#2B84EA]">Scan QR to Open Mobile Checkout</span>
+                        <p className="text-xs text-slate-600 leading-snug">Scan with phone camera to complete ₹{Number(payModalCredit.amount).toLocaleString()} Razorpay checkout.</p>
                         <p className="text-[11px] font-mono text-slate-500 pt-1">VPA: credsync.razorpay@okicici</p>
                       </div>
                     </div>
