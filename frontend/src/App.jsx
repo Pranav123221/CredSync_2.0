@@ -1,9 +1,24 @@
 import React, { useState } from 'react';
 import Sidebar from './layouts/Sidebar';
 import Dashboard from './components/Dashboard';
+import MobileRazorpayCheckout from './components/MobileRazorpayCheckout';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  const params = new URLSearchParams(window.location.search);
+  const isMobilePay = params.get('pay') === '1';
+
+  if (isMobilePay) {
+    return (
+      <MobileRazorpayCheckout
+        creditId={params.get('id')}
+        invoiceNumber={params.get('inv')}
+        amount={params.get('amt')}
+        customerName={params.get('cust')}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
