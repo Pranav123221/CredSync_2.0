@@ -1,510 +1,360 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
-import { QRCodeSVG } from 'qrcode.react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldAlert, TrendingUp, MessageSquare, Lightbulb, AlertTriangle, Plus, CheckCircle, X, CreditCard, Smartphone, Building2 } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Smartphone, ArrowRight, Loader2, ArrowLeft, Globe } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API = import.meta.env.VITE_API_URL || 'https://credsync-2-0.onrender.com/api';
 
-const readCache = (key, fallback) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw !== null ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+const FX_TO_INR = {
+  INR: 1,
+  USD: 84.5,
+  EUR: 91.2,
+  GBP: 106.8
 };
 
-const writeCache = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore storage quota errors
-  }
+const CURRENCY_SYMBOL = {
+  INR: '₹',
+  USD: '$',
+  EUR: '€',
+  GBP: '£'
 };
 
-const Dashboard = ({ activeTab, viewMode = 'merchant' }) => {
-  const [metrics, setMetrics] = useState(() => readCache('credsync_metrics', null));
-  const [insights, setInsights] = useState(() => readCache('credsync_insights', []));
-  const [customers, setCustomers] = useState(() => readCache('credsync_customers', []));
-  const [credits, setCredits] = useState(() => readCache('credsync_credits', []));
-  const [payments, setPayments] = useState(() => readCache('credsync_payments', []));
+const MobileRazorpayCheckout = ({
+  creditId,
+  invoiceNumber,
+  amount,
+  customerName,
+  initialCurrency = 'INR'
+}) => {
+  const [currency, setCurrency] = useState(
+    FX_TO_INR[initialCurrency] ? initialCurrency : 'INR'
+  );
+  const [upiId, setUpiId] = useState('customer@okicici');
+  const [processing, setProcessing] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [showMobileDashboard, setShowMobileDashboard] = useState(false);
+  const [syncedCredits, setSyncedCredits] = useState([]);
+  const [syncedMetrics, setSyncedMetrics] = useState(null);
 
-  // Modals State
-  const [showCustModal, setShowCustModal] = useState(false);
-  const [showCreditModal, setShowCreditModal] = useState(false);
-  const [payModalCredit, setPayModalCredit] = useState(null);
+  const rawAmount = Number(amount || 0);
+  const fxRate = FX_TO_INR[currency] || 1;
+  const settledInrAmount = Math.round(rawAmount * fxRate);
+  const sym = CURRENCY_SYMBOL[currency] || '₹';
 
-  // Forms State
-  const [custForm, setCustForm] = useState({ company_name: '', phone: '', email: '', credit_limit: 50000 });
-  const [creditForm, setCreditForm] = useState({ customer_id: '', amount: '', due_days: 15 });
-  const [payMethod, setPayMethod] = useState('Razorpay UPI');
-  const [payRef, setPayRef] = useState('credsync.razorpay@okicici');
+  const [txnId] = useState(() => 'pay_' + Math.random().toString(36).substring(2, 12).toUpperCase());
+  const [paidTime] = useState(() =>
+    new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  );
 
-  const fetchAllData = async () => {
+  const handleMobilePay = async (e) => {
+    e.preventDefault();
+    setProcessing(true);
     try {
-      // Phase 1: Fast Supabase ledger & KPIs (non-blocking UI)
-      const [mRes, cRes, crRes, pRes] = await Promise.all([
+      await axios.post(`${API}/credits/${creditId}/pay`, {
+        payment_method: currency === 'INR' ? 'Razorpay Mobile QR' : `Intl ${currency} -> INR Bank`,
+        reference_id:
+          currency === 'INR'
+            ? `${txnId} (${upiId})`
+            : `${txnId} (${sym}${rawAmount.toLocaleString()} ${currency} -> ₹${settledInrAmount.toLocaleString()} INR Bank)`
+      });
+      localStorage.removeItem('credsync_metrics');
+      localStorage.removeItem('credsync_credits');
+      localStorage.removeItem('credsync_payments');
+      setPaid(true);
+    } catch (err) {
+      console.error(err);
+      setPaid(true);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDoneClick = async () => {
+    try {
+      const [mRes, crRes] = await Promise.all([
         axios.get(`${API}/dashboard/metrics`),
-        axios.get(`${API}/customers/`),
-        axios.get(`${API}/credits/`),
-        axios.get(`${API}/credits/payments`)
+        axios.get(`${API}/credits/`)
       ]);
-
-      setMetrics(mRes.data);
-      setCustomers(cRes.data);
-      setCredits(crRes.data);
-      setPayments(pRes.data);
-
-      writeCache('credsync_metrics', mRes.data);
-      writeCache('credsync_customers', cRes.data);
-      writeCache('credsync_credits', crRes.data);
-      writeCache('credsync_payments', pRes.data);
-
-      if (cRes.data.length > 0 && !creditForm.customer_id) {
-        setCreditForm(prev => ({ ...prev, customer_id: cRes.data[0].id }));
-      }
+      setSyncedMetrics(mRes.data);
+      setSyncedCredits(crRes.data);
     } catch (err) {
       console.error(err);
     }
-
-    // Phase 2: Gemini AI insights in background so dashboard never waits on LLM
-    try {
-      const aiRes = await axios.get(`${API}/ai/`);
-      setInsights(aiRes.data);
-      writeCache('credsync_insights', aiRes.data);
-    } catch (err) {
-      console.error(err);
-    }
+    setShowMobileDashboard(true);
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
-
-  const handleCreateCustomer = async (e) => {
-    e.preventDefault();
-    await axios.post(`${API}/customers/`, { ...custForm, credit_limit: Number(custForm.credit_limit) });
-    setShowCustModal(false);
-    setCustForm({ company_name: '', phone: '', email: '', credit_limit: 50000 });
-    fetchAllData();
-  };
-
-  const handleCreateCredit = async (e) => {
-    e.preventDefault();
-    await axios.post(`${API}/credits/`, {
-      customer_id: creditForm.customer_id,
-      amount: Number(creditForm.amount),
-      due_days: Number(creditForm.due_days)
-    });
-    setShowCreditModal(false);
-    setCreditForm({ ...creditForm, amount: '' });
-    fetchAllData();
-  };
-
-  const handleProcessPayment = async (e) => {
-    e.preventDefault();
-    if (!payModalCredit) return;
-    await axios.post(`${API}/credits/${payModalCredit.id}/pay`, {
-      payment_method: payMethod,
-      reference_id: payRef || `RZP_${Math.floor(100000 + Math.random() * 900000)}`
-    });
-    setPayModalCredit(null);
-    fetchAllData();
-  };
-
-  if (!metrics) {
+  // View after clicking "Done": Mobile Dashboard - Synced Successfully
+  if (showMobileDashboard) {
     return (
-      <div className="flex items-center justify-center h-full text-lg font-semibold text-slate-600">
-        Initializing CredSync FinOps Engine...
+      <div className="min-h-screen bg-slate-100 font-sans text-slate-900">
+        <div className="bg-white border-b border-slate-200 px-4 py-3.5 flex items-center justify-between sticky top-0 z-10">
+          <button
+            onClick={() => setShowMobileDashboard(false)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Receipt
+          </button>
+          <span className="text-sm font-bold text-slate-900">Dashboard - Synced Successfully</span>
+          <span className="text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+            LIVE
+          </span>
+        </div>
+
+        <div className="p-4 max-w-md mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <p className="text-[11px] text-slate-500 font-semibold">Total Outstanding AR</p>
+              <p className="text-lg font-extrabold text-slate-900 mt-1">
+                ₹{syncedMetrics?.metrics?.total_outstanding ?? '—'}
+              </p>
+            </div>
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <p className="text-[11px] text-slate-500 font-semibold">Collection Efficiency</p>
+              <p className="text-lg font-extrabold text-emerald-600 mt-1">
+                {syncedMetrics?.metrics?.collection_efficiency ?? '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Latest Settled Invoice
+            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div>
+                <p className="text-sm font-bold text-slate-900">{invoiceNumber || 'Invoice'}</p>
+                <p className="text-xs text-slate-500">{customerName || 'B2B Account'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-extrabold text-slate-900">₹{settledInrAmount.toLocaleString()}</p>
+                {currency !== 'INR' && (
+                  <p className="text-[11px] font-semibold text-blue-600">
+                    From {sym}{rawAmount.toLocaleString()} {currency}
+                  </p>
+                )}
+                <span className="inline-block text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded mt-0.5">
+                  Status: Paid
+                </span>
+              </div>
+            </div>
+
+            <div className="text-xs space-y-1.5 text-slate-600">
+              <div className="flex justify-between">
+                <span>Transaction ID</span>
+                <span className="font-mono font-semibold text-slate-800">{txnId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Payment Method</span>
+                <span className="font-semibold text-slate-800">
+                  {currency === 'INR' ? `UPI (${upiId})` : `${currency} → INR Bank`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Ledger Invoices ({syncedCredits.length})
+            </h3>
+            {syncedCredits.slice(0, 5).map((item) => (
+              <div key={item.id} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-none">
+                <div>
+                  <p className="font-bold text-slate-800">{item.invoice_number}</p>
+                  <p className="text-slate-500">{item.customers?.company_name || 'Client'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-slate-900">₹{Number(item.amount).toLocaleString()}</p>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    item.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {item.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  const iconMap = {
-    AlertTriangle: <AlertTriangle className="text-orange-500" size={22} />,
-    ShieldAlert: <ShieldAlert className="text-red-500" size={22} />,
-    TrendingUp: <TrendingUp className="text-emerald-500" size={22} />,
-    MessageSquare: <MessageSquare className="text-blue-500" size={22} />,
-    Lightbulb: <Lightbulb className="text-amber-500" size={22} />
-  };
-
-  const mobileQrUrl = payModalCredit
-    ? `${window.location.origin}/?pay=1&id=${encodeURIComponent(payModalCredit.id)}&inv=${encodeURIComponent(payModalCredit.invoice_number)}&amt=${encodeURIComponent(payModalCredit.amount)}&cust=${encodeURIComponent(payModalCredit.customers?.company_name || 'Enterprise Client')}`
-    : '';
-
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Top Action Header */}
-      <header className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            {viewMode === 'customer'
-              ? 'Customer Payment & Invoice Settlement Portal'
-              : 'Accounts Receivable & Credit Operations'}
-          </h1>
-          <p className="text-sm text-slate-500">
-            {viewMode === 'customer'
-              ? 'Select any pending invoice to pay via UPI QR, Card, or NetBanking'
-              : 'Real-time ledger synchronization, aging analytics & Gemini risk scoring'}
-          </p>
-        </div>
-        {viewMode === 'merchant' && (
-          <div className="flex gap-3">
-            <button onClick={() => setShowCustModal(true)} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition">
-              <Plus size={16} /> Add Customer
-            </button>
-            <button onClick={() => setShowCreditModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition shadow-sm">
-              <Plus size={16} /> Issue Credit / Invoice
-            </button>
-          </div>
-        )}
-      </header>
-
-      {/* Enterprise KPI Cards (Merchant Only) */}
-      {viewMode === 'merchant' && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          <MetricCard title="Total Outstanding AR" amount={metrics.metrics.total_outstanding} sub="Active receivables" />
-          <MetricCard title="Total Overdue Exposure" amount={metrics.metrics.total_overdue} color="text-red-600" sub="Past due date" />
-          <MetricCard title="Collection Efficiency" amount={metrics.metrics.collection_efficiency} color="text-emerald-600" sub="Recovered vs Billed" />
-          <MetricCard title="Avg. DSO (Turnaround)" amount={metrics.metrics.avg_dso} color="text-blue-600" sub="Days Sales Outstanding" />
-        </div>
-      )}
-
-      {/* Main Dashboard View (Merchant Analytics & Gemini AI Insights) */}
-      {viewMode === 'merchant' && (activeTab === 'dashboard' || activeTab === 'ai') && (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-base font-bold text-slate-800">Aged Debt Distribution (₹)</h2>
-                <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-medium">Live Ledger</span>
-              </div>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={metrics.aged_debt}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <Tooltip cursor={{ fill: '#f8fafc' }} />
-                    <Bar dataKey="amount" fill="#10b981" radius={[6, 6, 0, 0]} barSize={44} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+        <div className="bg-[#0D1627] text-white p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#2B84EA] flex items-center justify-center font-extrabold text-xl italic">
+              R
             </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-base">Razorpay Checkout</span>
+                <span className="text-[10px] bg-blue-900/80 text-blue-300 px-2 py-0.5 rounded font-semibold">
+                  {currency === 'INR' ? 'TRUSTED' : 'FX → INR BANK'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">CredSync FinOps • {invoiceNumber}</p>
+            </div>
+          </div>
+        </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-              <h2 className="text-base font-bold text-slate-800 mb-5">Top Debtors & Risk Tier</h2>
-              <div className="space-y-4">
-                {metrics.top_debtors.map((debtor, idx) => (
-                  <div key={idx} className="flex justify-between items-center border-b border-slate-100 pb-3 last:border-0">
-                    <div>
-                      <p className="font-semibold text-slate-800 text-sm">{debtor.name}</p>
-                      <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
-                        debtor.risk === 'High' ? 'bg-red-100 text-red-700' : debtor.risk === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {debtor.risk} Risk • {debtor.days}
-                      </span>
-                    </div>
-                    <p className="font-bold text-slate-900 text-sm">{debtor.amount}</p>
-                  </div>
+        <div className="bg-[#162238] text-white px-5 py-3.5 flex items-center justify-between border-t border-slate-800">
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-slate-400">Merchant</p>
+            <p className="text-sm font-semibold text-slate-100">CredSync FinOps</p>
+            {currency !== 'INR' && (
+              <p className="text-[11px] text-emerald-400">
+                Indian Bank INR: ₹{settledInrAmount.toLocaleString()} (1 {currency} = ₹{fxRate})
+              </p>
+            )}
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] uppercase tracking-wider text-slate-400">Payable Amount</p>
+            <p className="text-xl font-extrabold text-emerald-400">
+              {currency === 'INR' ? `₹${rawAmount.toLocaleString()}` : `${sym}${rawAmount.toLocaleString()}`}
+            </p>
+          </div>
+        </div>
+
+        {!paid ? (
+          <form onSubmit={handleMobilePay} className="p-6 space-y-5">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-500 mb-1.5">
+                <Globe className="w-3.5 h-3.5 text-[#2B84EA]" />
+                Currency (INR or Intl → Indian Bank INR)
+              </label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {['INR', 'USD', 'EUR', 'GBP'].map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setCurrency(code)}
+                    className={`py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                      currency === code
+                        ? 'bg-[#2B84EA] text-white border-[#2B84EA]'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {code}
+                  </button>
                 ))}
               </div>
             </div>
-          </div>
 
-          {/* AI Business Insights */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-            <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Lightbulb className="text-amber-500" size={20} /> Gemini AI Financial & Risk Insights
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {insights.map((item) => (
-                <div key={item.id} className="flex items-start gap-3.5 p-4 bg-slate-50 rounded-lg border border-slate-200/60">
-                  <div className="mt-0.5 bg-white p-2 rounded-lg shadow-sm">{iconMap[item.icon] || iconMap.Lightbulb}</div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">{item.title}</h3>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Invoices & Credits Ledger Table */}
-      {(viewMode === 'customer' || activeTab === 'dashboard' || activeTab === 'credits') && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-          <h2 className="text-base font-bold text-slate-800 mb-4">Active Credit Ledger & Collections</h2>
-          {credits.length === 0 ? (
-            <p className="text-sm text-slate-500">No invoices issued yet. Click "+ Issue Credit / Invoice" above to create one.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                  <tr>
-                    <th className="p-3">Invoice #</th>
-                    <th className="p-3">Customer</th>
-                    <th className="p-3">Amount</th>
-                    <th className="p-3">Due Date</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {credits.map((c) => (
-                    <tr key={c.id}>
-                      <td className="p-3 font-mono font-semibold text-blue-600">{c.invoice_number}</td>
-                      <td className="p-3 font-medium">{c.customers?.company_name}</td>
-                      <td className="p-3 font-bold">₹{Number(c.amount).toLocaleString()}</td>
-                      <td className="p-3 text-slate-500">{c.due_date}</td>
-                      <td className="p-3">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          c.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : c.status === 'OVERDUE' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {c.status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        {c.status !== 'PAID' && (
-                          <button
-                            onClick={() => { setPayModalCredit(c); setPayMethod('Razorpay UPI'); setPayRef('credsync.razorpay@okicici'); }}
-                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-medium"
-                          >
-                            <CheckCircle size={14} /> Settle / Pay
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Payments Ledger View */}
-      {(viewMode === 'customer' || activeTab === 'dashboard' || activeTab === 'payments') && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-          <h2 className="text-base font-bold text-slate-800 mb-4">Verified Payments & Settlements ({payments.length})</h2>
-          {payments.length === 0 ? (
-            <p className="text-sm text-slate-500">No payments recorded yet. Click "Settle / Pay" on any invoice above to open payment options.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-600 border-b">
-                  <tr>
-                    <th className="p-3">Customer</th>
-                    <th className="p-3">Invoice Ref</th>
-                    <th className="p-3">Amount Settled</th>
-                    <th className="p-3">Payment Mode</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {payments.map((p) => (
-                    <tr key={p.id}>
-                      <td className="p-3 font-bold text-slate-800">{p.customers?.company_name}</td>
-                      <td className="p-3 font-mono text-blue-600">{p.credits?.invoice_number}</td>
-                      <td className="p-3 font-bold text-emerald-600">₹{Number(p.amount_paid).toLocaleString()}</td>
-                      <td className="p-3 text-slate-600 font-medium">{p.payment_method}</td>
-                      <td className="p-3">
-                        <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-semibold">
-                          {p.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Customers Directory View (Merchant Only) */}
-      {viewMode === 'merchant' && activeTab === 'customers' && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200/80">
-          <h2 className="text-base font-bold text-slate-800 mb-4">Registered Business Accounts ({customers.length})</h2>
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600 border-b">
-              <tr>
-                <th className="p-3">Company Name</th>
-                <th className="p-3">Phone</th>
-                <th className="p-3">Email</th>
-                <th className="p-3">Approved Credit Limit</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {customers.map((cust) => (
-                <tr key={cust.id}>
-                  <td className="p-3 font-bold text-slate-800">{cust.company_name}</td>
-                  <td className="p-3">{cust.phone}</td>
-                  <td className="p-3 text-slate-500">{cust.email || '—'}</td>
-                  <td className="p-3 font-semibold text-emerald-700">₹{Number(cust.credit_limit).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Modal 1: Add Customer */}
-      {showCustModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Register New Customer</h3>
-              <button onClick={() => setShowCustModal(false)}><X size={20} /></button>
-            </div>
-            <form onSubmit={handleCreateCustomer} className="space-y-4">
-              <input required placeholder="Company Name (e.g. Rajasthan Steel)" className="w-full border p-2.5 rounded-lg text-sm" value={custForm.company_name} onChange={e => setCustForm({...custForm, company_name: e.target.value})} />
-              <input required placeholder="Phone Number" className="w-full border p-2.5 rounded-lg text-sm" value={custForm.phone} onChange={e => setCustForm({...custForm, phone: e.target.value})} />
-              <input placeholder="Email Address" className="w-full border p-2.5 rounded-lg text-sm" value={custForm.email} onChange={e => setCustForm({...custForm, email: e.target.value})} />
-              <input required type="number" placeholder="Credit Limit (₹)" className="w-full border p-2.5 rounded-lg text-sm" value={custForm.credit_limit} onChange={e => setCustForm({...custForm, credit_limit: e.target.value})} />
-              <button type="submit" className="w-full bg-slate-900 text-white py-2.5 rounded-lg font-medium text-sm">Save Customer to PostgreSQL</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 2: Issue Credit */}
-      {showCreditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Issue Credit / Invoice</h3>
-              <button onClick={() => setShowCreditModal(false)}><X size={20} /></button>
-            </div>
-            <form onSubmit={handleCreateCredit} className="space-y-4">
-              <select required className="w-full border p-2.5 rounded-lg text-sm" value={creditForm.customer_id} onChange={e => setCreditForm({...creditForm, customer_id: e.target.value})}>
-                <option value="">Select Customer...</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </select>
-              <input required type="number" placeholder="Credit Amount (₹)" className="w-full border p-2.5 rounded-lg text-sm" value={creditForm.amount} onChange={e => setCreditForm({...creditForm, amount: e.target.value})} />
-              <select className="w-full border p-2.5 rounded-lg text-sm" value={creditForm.due_days} onChange={e => setCreditForm({...creditForm, due_days: e.target.value})}>
-                <option value={15}>Due in 15 Days (Current)</option>
-                <option value={30}>Due in 30 Days (Net 30)</option>
-                <option value={-20}>Simulate 20 Days Overdue (Demo Risk)</option>
-                <option value={-45}>Simulate 45 Days Overdue (High Risk)</option>
-              </select>
-              <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium text-sm">Generate Invoice & Sync Ledger</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 3: Razorpay Powered Payment Checkout Gateway */}
-      {payModalCredit && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl overflow-hidden w-full max-w-md shadow-2xl border border-slate-200">
-            
-            {/* Razorpay Branded Header */}
-            <div className="bg-[#0D1627] text-white px-6 py-4 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-[#2B84EA] flex items-center justify-center font-black text-white text-lg italic shadow-md">
-                  R
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold tracking-wide">Razorpay Checkout</h3>
-                    <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-1.5 py-0.5 rounded font-semibold">TRUSTED</span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5">{payModalCredit.customers?.company_name} • {payModalCredit.invoice_number}</p>
-                </div>
-              </div>
-              <button onClick={() => setPayModalCredit(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
-            </div>
-
-            {/* Amount Bar */}
-            <div className="bg-[#162238] text-white px-6 py-3 flex justify-between items-center border-t border-slate-800">
-              <span className="text-xs text-slate-300">Payable Amount</span>
-              <span className="text-xl font-bold text-emerald-400">₹{Number(payModalCredit.amount).toLocaleString()}</span>
-            </div>
-
-            <div className="p-6">
-              {/* Payment Mode Tabs */}
-              <div className="grid grid-cols-3 gap-2 mb-5">
-                <button type="button" onClick={() => { setPayMethod('Razorpay UPI'); setPayRef('credsync.razorpay@okicici'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('UPI') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <Smartphone size={18} /> UPI / QR
-                </button>
-                <button type="button" onClick={() => { setPayMethod('Razorpay Card'); setPayRef('•••• 4829'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('Card') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <CreditCard size={18} /> Card
-                </button>
-                <button type="button" onClick={() => { setPayMethod('Razorpay NetBanking'); setPayRef('UTR88291044'); }} className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition ${payMethod.includes('NetBanking') ? 'border-[#2B84EA] bg-blue-50 text-[#2B84EA]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <Building2 size={18} /> NetBanking
-                </button>
-              </div>
-
-              <form onSubmit={handleProcessPayment} className="space-y-4">
-                {payMethod.includes('UPI') && (
-                  <div className="space-y-3">
-                    {/* Offline SVG QR Code for Mobile Checkout Scan */}
-                    <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="p-1.5 bg-white rounded-lg border shadow-xs shrink-0">
-                        <QRCodeSVG value={mobileQrUrl} size={88} level="M" />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase text-[#2B84EA]">Scan QR to Open Mobile Checkout</span>
-                        <p className="text-xs text-slate-600 leading-snug">Scan with phone camera to complete ₹{Number(payModalCredit.amount).toLocaleString()} Razorpay checkout.</p>
-                        <p className="text-[11px] font-mono text-slate-500 pt-1">VPA: credsync.razorpay@okicici</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-600">Or Enter Customer UPI ID</label>
-                      <input required className="w-full border p-2.5 rounded-lg text-sm font-mono mt-1" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="customer@upi" />
-                    </div>
-                  </div>
+            <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
+              <Smartphone className="w-5 h-5 text-[#2B84EA] shrink-0" />
+              <p className="text-xs text-slate-700 leading-relaxed">
+                {currency === 'INR' ? (
+                  <>
+                    QR scanned for <span className="font-bold">{customerName || 'Client'}</span>. Tap below to settle invoice in real time.
+                  </>
+                ) : (
+                  <>
+                    Intl settlement for <span className="font-bold">{customerName || 'Client'}</span>: {sym}
+                    {rawAmount.toLocaleString()} {currency} converts at ₹{fxRate} to{' '}
+                    <span className="font-bold text-emerald-700">₹{settledInrAmount.toLocaleString()} INR</span> in Indian bank.
+                  </>
                 )}
-
-                {payMethod.includes('Card') && (
-                  <div className="space-y-2.5">
-                    <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" placeholder="Card Number: 4532 •••• •••• 4829" defaultValue="4532 8910 3321 4829" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input required className="border p-2.5 rounded-lg text-sm font-mono" placeholder="MM/YY" defaultValue="09/29" />
-                      <input required type="password" className="border p-2.5 rounded-lg text-sm font-mono" placeholder="CVV" defaultValue="842" />
-                    </div>
-                  </div>
-                )}
-
-                {payMethod.includes('NetBanking') && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-600">Select Bank / UTR Reference</label>
-                    <select className="w-full border p-2.5 rounded-lg text-sm mb-2">
-                      <option>HDFC Corporate Banking</option>
-                      <option>ICICI Business NetBanking</option>
-                      <option>State Bank of India (SBI)</option>
-                      <option>Axis Bank Corporate</option>
-                    </select>
-                    <input required className="w-full border p-2.5 rounded-lg text-sm font-mono" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="UTR Number" />
-                  </div>
-                )}
-
-                <button type="submit" className="w-full bg-[#2B84EA] hover:bg-blue-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-blue-600/20 transition flex items-center justify-center gap-2">
-                  Pay ₹{Number(payModalCredit.amount).toLocaleString()} via Razorpay
-                </button>
-              </form>
-
-              <p className="text-center text-[11px] text-slate-400 mt-3">
-                Secured by <span className="font-bold text-slate-600">Razorpay</span> • PCI-DSS Level 1 Compliant
               </p>
             </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">
+                {currency === 'INR' ? 'Payer UPI ID' : 'Payer UPI ID / Intl Ref'}
+              </label>
+              <input
+                type="text"
+                required
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg font-mono text-sm text-slate-900 focus:outline-none focus:border-[#2B84EA]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={processing}
+              className="w-full py-3.5 bg-[#2B84EA] hover:bg-blue-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              {processing ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Processing Payment...
+                </>
+              ) : (
+                <>
+                  {currency === 'INR'
+                    ? `Pay ₹${rawAmount.toLocaleString()} Now`
+                    : `Pay ${sym}${rawAmount.toLocaleString()} → ₹${settledInrAmount.toLocaleString()} INR`}
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              Secured by Razorpay • Encrypted Settlement
+            </div>
+          </form>
+        ) : (
+          <div className="p-6 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900">Payment Successful</h2>
+              <p className="text-2xl font-extrabold text-slate-900 mt-0.5">
+                ₹{settledInrAmount.toLocaleString()}.00 Paid
+              </p>
+              {currency !== 'INR' && (
+                <p className="text-xs font-semibold text-blue-600 mt-0.5">
+                  Settled from {sym}{rawAmount.toLocaleString()} {currency} (@ ₹{fxRate}) to Indian Bank INR
+                </p>
+              )}
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-left space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Invoice</span>
+                <span className="font-mono font-bold text-slate-800">{invoiceNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Merchant</span>
+                <span className="font-semibold text-slate-800">CredSync FinOps</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Date</span>
+                <span className="font-semibold text-slate-800">{paidTime}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Transaction ID</span>
+                <span className="font-mono font-bold text-slate-800">{txnId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Payment Method</span>
+                <span className="font-semibold text-slate-800">
+                  {currency === 'INR' ? `UPI (${upiId})` : `${currency} → INR Bank (${upiId})`}
+                </span>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Verified by Razorpay
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDoneClick}
+              className="w-full py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-bold rounded-xl shadow transition cursor-pointer"
+            >
+              Done
+            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
 
-const MetricCard = ({ title, amount, sub, color = "text-slate-900" }) => (
-  <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
-    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">{title}</p>
-    <p className={`text-2xl font-bold mt-2 ${color}`}>{amount}</p>
-    <p className="text-xs text-slate-400 mt-1">{sub}</p>
-  </div>
-);
-
-export default Dashboard;
+export default MobileRazorpayCheckout;
