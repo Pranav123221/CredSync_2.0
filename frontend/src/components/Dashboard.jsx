@@ -178,19 +178,30 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
     e.preventDefault();
     setSubmitting(true);
     try {
-      await axios.post(`${API}/customers/`, {
-        company_name: customerForm.company_name,
-        contact_name: customerForm.contact_name,
-        email: customerForm.email,
+      const payload = {
+        company_name: customerForm.company_name.trim(),
+        email: customerForm.email.trim() || null,
         credit_limit: Number(customerForm.credit_limit || 0)
-      });
+      };
+
+      if (customerForm.contact_name.trim()) {
+        payload.contact_name = customerForm.contact_name.trim();
+      }
+
+      await axios.post(`${API}/customers`, payload);
       setCustomerForm({ company_name: '', contact_name: '', email: '', credit_limit: '250000' });
       setShowCustomerModal(false);
       setStatusBanner('New B2B customer account created & synced.');
       await fetchAllData(false);
     } catch (err) {
-      console.error(err);
-      setStatusBanner('Could not create customer. Please verify backend connection.');
+      const detail = err?.response?.data?.detail;
+      const reason =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d) => d.msg).join(', ')
+            : err?.message || 'Backend connection failed';
+      setStatusBanner(`Could not create customer: ${reason}`);
     } finally {
       setSubmitting(false);
     }
