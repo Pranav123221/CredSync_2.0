@@ -178,15 +178,17 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
     e.preventDefault();
     setSubmitting(true);
     try {
-      const payload = {
-        company_name: customerForm.company_name.trim(),
-        email: customerForm.email.trim() || null,
-        credit_limit: Number(customerForm.credit_limit || 0)
-      };
+      const cleanCompany = customerForm.company_name.trim();
+      const slugCompany = cleanCompany.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client';
+      const cleanEmail = customerForm.email.trim() || `${slugCompany}@credsync.local`;
+      const cleanContact = customerForm.contact_name.trim() || cleanCompany;
 
-      if (customerForm.contact_name.trim()) {
-        payload.contact_name = customerForm.contact_name.trim();
-      }
+      const payload = {
+        company_name: cleanCompany,
+        contact_name: cleanContact,
+        email: cleanEmail,
+        credit_limit: Number(customerForm.credit_limit || 250000)
+      };
 
       await axios.post(`${API}/customers`, payload);
       setCustomerForm({ company_name: '', contact_name: '', email: '', credit_limit: '250000' });
@@ -199,7 +201,12 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
         typeof detail === 'string'
           ? detail
           : Array.isArray(detail)
-            ? detail.map((d) => d.msg).join(', ')
+            ? detail
+                .map((d) => {
+                  const field = Array.isArray(d.loc) ? d.loc.slice(1).join('.') : '';
+                  return field ? `${field}: ${d.msg}` : d.msg;
+                })
+                .join(' | ')
             : err?.message || 'Backend connection failed';
       setStatusBanner(`Could not create customer: ${reason}`);
     } finally {
