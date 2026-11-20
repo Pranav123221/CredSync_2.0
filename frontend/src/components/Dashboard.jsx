@@ -70,10 +70,10 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [qrInvoice, setQrInvoice] = useState(null);
 
-  // Add Customer Form
+  // Add Customer Form (Company, Phone No., Email ID, Rupees / Credit Limit)
   const [customerForm, setCustomerForm] = useState({
     company_name: '',
-    contact_name: '',
+    phone: '',
     email: '',
     credit_limit: '250000'
   });
@@ -180,18 +180,18 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
     try {
       const cleanCompany = customerForm.company_name.trim();
       const slugCompany = cleanCompany.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client';
+      const cleanPhone = customerForm.phone.trim() || '9000000000';
       const cleanEmail = customerForm.email.trim() || `${slugCompany}@credsync.local`;
-      const cleanContact = customerForm.contact_name.trim() || cleanCompany;
 
       const payload = {
         company_name: cleanCompany,
-        contact_name: cleanContact,
+        phone: cleanPhone,
         email: cleanEmail,
         credit_limit: Number(customerForm.credit_limit || 250000)
       };
 
-      await axios.post(`${API}/customers`, payload);
-      setCustomerForm({ company_name: '', contact_name: '', email: '', credit_limit: '250000' });
+      await axios.post(`${API}/customers/`, payload);
+      setCustomerForm({ company_name: '', phone: '', email: '', credit_limit: '250000' });
       setShowCustomerModal(false);
       setStatusBanner('New B2B customer account created & synced.');
       await fetchAllData(false);
@@ -500,7 +500,7 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 uppercase">
                   <th className="py-2.5 px-3">Company</th>
-                  <th className="py-2.5 px-3">Contact</th>
+                  <th className="py-2.5 px-3">Phone No.</th>
                   <th className="py-2.5 px-3">Email</th>
                   <th className="py-2.5 px-3 text-right">Credit Limit</th>
                 </tr>
@@ -509,7 +509,7 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
                 {customers.map((c) => (
                   <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-3 px-3 font-bold text-slate-900">{c.company_name}</td>
-                    <td className="py-3 px-3 text-slate-700">{c.contact_name || '—'}</td>
+                    <td className="py-3 px-3 font-mono text-slate-700">{c.phone || c.contact_name || '—'}</td>
                     <td className="py-3 px-3 text-slate-600">{c.email || '—'}</td>
                     <td className="py-3 px-3 text-right font-extrabold text-slate-900">
                       ₹{Number(c.credit_limit || 0).toLocaleString()}
@@ -631,7 +631,7 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
         </div>
       )}
 
-      {/* Add Customer Modal */}
+      {/* Add Customer Modal (Company, Phone No., Email ID, Rupees) */}
       {showCustomerModal && viewMode === 'merchant' && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -655,19 +655,21 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
                 />
               </div>
               <div>
-                <label className="block font-bold text-slate-600 mb-1">Contact Person</label>
+                <label className="block font-bold text-slate-600 mb-1">Phone No.</label>
                 <input
-                  type="text"
-                  value={customerForm.contact_name}
-                  onChange={(e) => setCustomerForm({ ...customerForm, contact_name: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. Vikram Rathore"
+                  type="tel"
+                  required
+                  value={customerForm.phone}
+                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono"
+                  placeholder="e.g. 9876543210"
                 />
               </div>
               <div>
-                <label className="block font-bold text-slate-600 mb-1">Email</label>
+                <label className="block font-bold text-slate-600 mb-1">Email ID</label>
                 <input
                   type="email"
+                  required
                   value={customerForm.email}
                   onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
