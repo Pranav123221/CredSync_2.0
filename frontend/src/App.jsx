@@ -22,6 +22,7 @@ function App() {
         invoiceNumber={params.get('inv')}
         amount={params.get('amt')}
         customerName={params.get('cust')}
+        initialCurrency={params.get('curr') || 'INR'}
       />
     );
   }
