@@ -92,6 +92,8 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
   const fetchAllData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
 
+    let latestMetrics = readCache(CACHE_KEYS.metrics, null);
+
     try {
       const [metricsRes, customersRes, creditsRes, paymentsRes] = await Promise.all([
         axios.get(`${API}/dashboard/metrics`),
@@ -105,6 +107,7 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
       const crVal = Array.isArray(creditsRes.data) ? creditsRes.data : [];
       const paVal = Array.isArray(paymentsRes.data) ? paymentsRes.data : [];
 
+      latestMetrics = mVal;
       setMetricsData(mVal);
       setCustomers(cuVal);
       setCredits(crVal);
@@ -124,16 +127,44 @@ const Dashboard = ({ activeTab = 'dashboard', setActiveTab = () => {}, viewMode 
       if (isManual) setRefreshing(false);
     }
 
-    // Phase 2: Non-blocking Gemini AI insights fetch
+    // Phase 2: Non-blocking Gemini AI insights fetch with timeout & fallback
     setAiLoading(true);
     try {
-      const aiRes = await axios.get(`${API}/ai/`);
-      if (aiRes.data) {
-        setAiInsights(aiRes.data);
-        writeCache(CACHE_KEYS.ai, aiRes.data);
+      const aiRes = await axios.get(`${API}/ai/`, { timeout: 8000 });
+      const rawData = aiRes.data;
+      const extractedAlerts = Array.isArray(rawData?.alerts)
+        ? rawData.alerts
+        : Array.isArray(rawData?.insights)
+          ? rawData.insights
+          : Array.isArray(rawData)
+            ? rawData
+            : [];
+
+      if (extractedAlerts.length > 0) {
+        setAiInsights({ alerts: extractedAlerts });
+        writeCache(CACHE_KEYS.ai, { alerts: extractedAlerts });
+      } else {
+        const m = latestMetrics?.metrics || {};
+        const topD = Array.isArray(latestMetrics?.top_debtors) ? latestMetrics.top_debtors[0] : null;
+        const fallbackAlerts = [
+          `Outstanding AR: ${m.total_outstanding || '₹0'} | Overdue: ${m.total_overdue || '₹0'} | Efficiency: ${m.collection_efficiency || '0%'}.`,
+          topD
+            ? `Priority debtor: ${topD.name} (${topD.amount}, ${topD.days}, ${topD.risk} Risk) — share QR link for faster settlement.`
+            : 'Use QR / UPI mobile settlement links to speed up invoice collections.'
+        ];
+        setAiInsights({ alerts: fallbackAlerts });
       }
     } catch (err) {
       console.error('AI insights fetch error:', err);
+      const m = latestMetrics?.metrics || {};
+      const topD = Array.isArray(latestMetrics?.top_debtors) ? latestMetrics.top_debtors[0] : null;
+      const fallbackAlerts = [
+        `Ledger Snapshot: Outstanding AR ${m.total_outstanding || '₹0'} and Overdue ${m.total_overdue || '₹0'}.`,
+        topD
+          ? `Recommended follow-up: ${topD.name} (${topD.amount}, ${topD.risk} Risk).`
+          : 'All ledger entries synced; trigger mobile QR checkout to settle open dues.'
+      ];
+      setAiInsights({ alerts: fallbackAlerts });
     } finally {
       setAiLoading(false);
     }
