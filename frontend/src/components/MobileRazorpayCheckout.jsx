@@ -1,44 +1,16 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { CheckCircle2, ShieldCheck, Smartphone, ArrowRight, Loader2, ArrowLeft, Globe } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Smartphone, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'https://credsync-2-0.onrender.com/api';
 
-const FX_TO_INR = {
-  INR: 1,
-  USD: 84.5,
-  EUR: 91.2,
-  GBP: 106.8
-};
-
-const CURRENCY_SYMBOL = {
-  INR: '₹',
-  USD: '$',
-  EUR: '€',
-  GBP: '£'
-};
-
-const MobileRazorpayCheckout = ({
-  creditId,
-  invoiceNumber,
-  amount,
-  customerName,
-  initialCurrency = 'INR'
-}) => {
-  const [currency, setCurrency] = useState(
-    FX_TO_INR[initialCurrency] ? initialCurrency : 'INR'
-  );
+const MobileRazorpayCheckout = ({ creditId, invoiceNumber, amount, customerName }) => {
   const [upiId, setUpiId] = useState('customer@okicici');
   const [processing, setProcessing] = useState(false);
   const [paid, setPaid] = useState(false);
   const [showMobileDashboard, setShowMobileDashboard] = useState(false);
   const [syncedCredits, setSyncedCredits] = useState([]);
   const [syncedMetrics, setSyncedMetrics] = useState(null);
-
-  const rawAmount = Number(amount || 0);
-  const fxRate = FX_TO_INR[currency] || 1;
-  const settledInrAmount = Math.round(rawAmount * fxRate);
-  const sym = CURRENCY_SYMBOL[currency] || '₹';
 
   const [txnId] = useState(() => 'pay_' + Math.random().toString(36).substring(2, 12).toUpperCase());
   const [paidTime] = useState(() =>
@@ -50,11 +22,8 @@ const MobileRazorpayCheckout = ({
     setProcessing(true);
     try {
       await axios.post(`${API}/credits/${creditId}/pay`, {
-        payment_method: currency === 'INR' ? 'Razorpay Mobile QR' : `Intl ${currency} -> INR Bank`,
-        reference_id:
-          currency === 'INR'
-            ? `${txnId} (${upiId})`
-            : `${txnId} (${sym}${rawAmount.toLocaleString()} ${currency} -> ₹${settledInrAmount.toLocaleString()} INR Bank)`
+        payment_method: 'Razorpay Mobile QR',
+        reference_id: `${txnId} (${upiId})`
       });
       localStorage.removeItem('credsync_metrics');
       localStorage.removeItem('credsync_credits');
@@ -126,12 +95,7 @@ const MobileRazorpayCheckout = ({
                 <p className="text-xs text-slate-500">{customerName || 'B2B Account'}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-extrabold text-slate-900">₹{settledInrAmount.toLocaleString()}</p>
-                {currency !== 'INR' && (
-                  <p className="text-[11px] font-semibold text-blue-600">
-                    From {sym}{rawAmount.toLocaleString()} {currency}
-                  </p>
-                )}
+                <p className="text-sm font-extrabold text-slate-900">₹{Number(amount || 0).toLocaleString()}</p>
                 <span className="inline-block text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded mt-0.5">
                   Status: Paid
                 </span>
@@ -145,9 +109,7 @@ const MobileRazorpayCheckout = ({
               </div>
               <div className="flex justify-between">
                 <span>Payment Method</span>
-                <span className="font-semibold text-slate-800">
-                  {currency === 'INR' ? `UPI (${upiId})` : `${currency} → INR Bank`}
-                </span>
+                <span className="font-semibold text-slate-800">UPI ({upiId})</span>
               </div>
             </div>
           </div>
@@ -190,87 +152,39 @@ const MobileRazorpayCheckout = ({
               <div className="flex items-center gap-2">
                 <span className="font-bold text-base">Razorpay Checkout</span>
                 <span className="text-[10px] bg-blue-900/80 text-blue-300 px-2 py-0.5 rounded font-semibold">
-                  {currency === 'INR' ? 'TRUSTED' : 'FX → INR BANK'}
+                  TRUSTED
                 </span>
               </div>
               <p className="text-xs text-slate-400">CredSync FinOps • {invoiceNumber}</p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = window.location.origin + '/';
-            }}
-            className="text-xs font-semibold bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition cursor-pointer"
-          >
-            Dashboard
-          </button>
         </div>
 
         <div className="bg-[#162238] text-white px-5 py-3.5 flex items-center justify-between border-t border-slate-800">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-slate-400">Merchant</p>
             <p className="text-sm font-semibold text-slate-100">CredSync FinOps</p>
-            {currency !== 'INR' && (
-              <p className="text-[11px] text-emerald-400">
-                Indian Bank INR: ₹{settledInrAmount.toLocaleString()} (1 {currency} = ₹{fxRate})
-              </p>
-            )}
           </div>
           <div className="text-right">
             <p className="text-[11px] uppercase tracking-wider text-slate-400">Payable Amount</p>
             <p className="text-xl font-extrabold text-emerald-400">
-              {currency === 'INR' ? `₹${rawAmount.toLocaleString()}` : `${sym}${rawAmount.toLocaleString()}`}
+              ₹{Number(amount || 0).toLocaleString()}
             </p>
           </div>
         </div>
 
         {!paid ? (
           <form onSubmit={handleMobilePay} className="p-6 space-y-5">
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-500 mb-1.5">
-                <Globe className="w-3.5 h-3.5 text-[#2B84EA]" />
-                Currency (INR or Intl → Indian Bank INR)
-              </label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {['INR', 'USD', 'EUR', 'GBP'].map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    onClick={() => setCurrency(code)}
-                    className={`py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                      currency === code
-                        ? 'bg-[#2B84EA] text-white border-[#2B84EA]'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {code}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
               <Smartphone className="w-5 h-5 text-[#2B84EA] shrink-0" />
               <p className="text-xs text-slate-700 leading-relaxed">
-                {currency === 'INR' ? (
-                  <>
-                    QR scanned for <span className="font-bold">{customerName || 'Client'}</span>. Tap below to settle invoice in real time.
-                  </>
-                ) : (
-                  <>
-                    Intl settlement for <span className="font-bold">{customerName || 'Client'}</span>: {sym}
-                    {rawAmount.toLocaleString()} {currency} converts at ₹{fxRate} to{' '}
-                    <span className="font-bold text-emerald-700">₹{settledInrAmount.toLocaleString()} INR</span> in Indian bank.
-                  </>
-                )}
+                QR scanned for <span className="font-bold">{customerName || 'Client'}</span>. Tap below to settle invoice in real time.
               </p>
             </div>
 
             <div>
               <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">
-                {currency === 'INR' ? 'Payer UPI ID' : 'Payer UPI ID / Intl Ref'}
+                Payer UPI ID
               </label>
               <input
                 type="text"
@@ -293,9 +207,7 @@ const MobileRazorpayCheckout = ({
                 </>
               ) : (
                 <>
-                  {currency === 'INR'
-                    ? `Pay ₹${rawAmount.toLocaleString()} Now`
-                    : `Pay ${sym}${rawAmount.toLocaleString()} → ₹${settledInrAmount.toLocaleString()} INR`}
+                  Pay ₹{Number(amount || 0).toLocaleString()} Now
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -314,13 +226,8 @@ const MobileRazorpayCheckout = ({
             <div>
               <h2 className="text-xl font-extrabold text-slate-900">Payment Successful</h2>
               <p className="text-2xl font-extrabold text-slate-900 mt-0.5">
-                ₹{settledInrAmount.toLocaleString()}.00 Paid
+                ₹{Number(amount || 0).toLocaleString()}.00 Paid
               </p>
-              {currency !== 'INR' && (
-                <p className="text-xs font-semibold text-blue-600 mt-0.5">
-                  Settled from {sym}{rawAmount.toLocaleString()} {currency} (@ ₹{fxRate}) to Indian Bank INR
-                </p>
-              )}
             </div>
 
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-left space-y-2 text-xs">
@@ -342,9 +249,7 @@ const MobileRazorpayCheckout = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment Method</span>
-                <span className="font-semibold text-slate-800">
-                  {currency === 'INR' ? `UPI (${upiId})` : `${currency} → INR Bank (${upiId})`}
-                </span>
+                <span className="font-semibold text-slate-800">UPI ({upiId})</span>
               </div>
             </div>
 
